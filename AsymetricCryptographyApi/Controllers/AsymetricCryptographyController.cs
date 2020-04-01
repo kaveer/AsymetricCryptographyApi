@@ -15,6 +15,7 @@ namespace AsymetricCryptographyApi.Controllers
         public IHttpActionResult Generate([FromUri] int mode)
         {
             return Ok("test");
+
         }
     }
 }
