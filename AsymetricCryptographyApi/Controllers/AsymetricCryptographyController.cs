@@ -2,6 +2,7 @@
 using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
+using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Prng;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
@@ -11,6 +12,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Web.Http;
 using System.Web.Http.Cors;
 
@@ -25,7 +28,7 @@ namespace AsymetricCryptographyApi.Controllers
         public IHttpActionResult Generate([FromUri] int mode)
         {
             Dictionary<int, string> keys = null;
-            AccountSecureKeyViewModel result = null;
+            KeyPairsModel result = null;
 
             try
             {
@@ -50,7 +53,7 @@ namespace AsymetricCryptographyApi.Controllers
 
                 if (keys.Count > 0)
                 {
-                   result = new AccountSecureKeyViewModel()
+                   result = new KeyPairsModel()
                    {
                         PublicKey = keys[Convert.ToInt32(RSAKeyType.Public)],
                         PrivateKey = keys[Convert.ToInt32(RSAKeyType.Private)],
@@ -68,6 +71,60 @@ namespace AsymetricCryptographyApi.Controllers
             }
 
         }
+
+        [Route("encrypt")]
+        [HttpPost]
+        public IHttpActionResult Encrypt([FromBody] Cryptographymodel item)
+        {
+            try
+            {
+                byte[] keyBytes = Convert.FromBase64String(item.PublicKey);
+
+                RsaKeyParameters publicKeyInfo = (RsaKeyParameters)PublicKeyFactory.CreateKey(keyBytes);
+
+                RSACryptoServiceProvider rsa = new RSACryptoServiceProvider();
+                RSAParameters rsaParameters = new RSAParameters();
+                rsaParameters.Modulus = publicKeyInfo.Modulus.ToByteArrayUnsigned();
+                rsaParameters.Exponent = publicKeyInfo.Exponent.ToByteArrayUnsigned();
+                rsa.ImportParameters(rsaParameters);
+
+                byte[] bytes = Encoding.UTF8.GetBytes(item.Plaintext);
+                byte[] enc = rsa.Encrypt(bytes, false);
+                string base64Enc = Convert.ToBase64String(enc);
+
+
+                return Ok(base64Enc);
+            }
+            catch (Exception ex)
+            {
+                return InternalServerError(ex);
+            }
+        }
+
+        [Route("decrypt")]
+        [HttpPost]
+        public IHttpActionResult Decrypt([FromBody] Cryptographymodel item)
+        {
+            try
+            {
+                RsaPrivateCrtKeyParameters privateKey = (RsaPrivateCrtKeyParameters)PrivateKeyFactory.CreateKey(Convert.FromBase64String(item.PrivateKey));
+                RSACryptoServiceProvider rsa = new RSACryptoServiceProvider();
+
+                RSAParameters rsaParameters2 = DotNetUtilities.ToRSAParameters((RsaPrivateCrtKeyParameters)privateKey);
+
+                rsa.ImportParameters(rsaParameters2);
+
+                byte[] dec = rsa.Decrypt(Convert.FromBase64String(item.Chipertext), false);
+                string decStr = Encoding.UTF8.GetString(dec);
+
+
+                return Ok(decStr);
+            }
+            catch (Exception ex)
+            {
+                return InternalServerError(ex);
+            }
+        }
     }
 
     public enum RSAKeyType
@@ -76,9 +133,15 @@ namespace AsymetricCryptographyApi.Controllers
         Public = 2
     }
 
-    public class AccountSecureKeyViewModel
+    public class KeyPairsModel
     {
         public string PrivateKey { get; set; }
         public string PublicKey { get; set; }
+    }
+
+    public class Cryptographymodel: KeyPairsModel
+    {
+        public string Plaintext { get; set; }
+        public string Chipertext { get; set; }
     }
 }
